@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Transform any text into spoken audio with this free, browser-based text-to-speech tool. No installation required.">
+    <meta name="keywords" content="text to speech, TTS, audiobook, speech synthesis, free TTS">
+    <meta name="author" content="Antoine Koerber">
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:title" content="The Homemade Audiobook - Free Text-to-Speech">
+    <meta property="og:description" content="Transform any text into spoken audio instantly. No sign-up, no installation.">
+    <meta property="og:type" content="website">
+
+    <title>The Homemade Audiobook | Free Text-to-Speech Tool</title>
+    <link rel="stylesheet" href="static/css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">
+                <span class="logo-icon">🎧</span>
+                The Homemade Audiobook
+            </h1>
+            <p class="tagline">Transform any text into spoken audio — instantly, free, no sign-up</p>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+                <span class="theme-icon">🌙</span>
+            </button>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Text Input Section -->
+            <section class="input-section">
+                <div class="section-header">
+                    <h2>Your Text</h2>
+                    <div class="char-count">
+                        <span id="char-count">0</span> / <span id="char-limit">5000</span> characters
+                    </div>
+                </div>
+                <textarea
+                    id="text-input"
+                    class="text-input"
+                    placeholder="Paste or type your text here... Articles, stories, notes, emails — anything you want to listen to instead of read."
+                    maxlength="5000"
+                    aria-label="Text to convert to speech"></textarea>
+                <div class="input-actions">
+                    <button type="button" class="btn btn-ghost" id="clear-btn">
+                        <span class="btn-icon">🗑️</span>
+                        Clear
+                    </button>
+                    <button type="button" class="btn btn-ghost" id="paste-btn">
+                        <span class="btn-icon">📋</span>
+                        Paste
+                    </button>
+                    <button type="button" class="btn btn-ghost" id="sample-btn">
+                        <span class="btn-icon">📝</span>
+                        Sample Text
+                    </button>
+                </div>
+            </section>
+
+            <!-- Voice Settings Section -->
+            <section class="settings-section">
+                <h2>Voice Settings</h2>
+                <div class="settings-grid">
+                    <!-- Voice Selection -->
+                    <div class="setting-group">
+                        <label for="voice-select" class="setting-label">Voice</label>
+                        <select id="voice-select" class="setting-select">
+                            <option value="">Loading voices...</option>
+                        </select>
+                    </div>
+
+                    <!-- Speed Control -->
+                    <div class="setting-group">
+                        <label for="rate-slider" class="setting-label">
+                            Speed: <span id="rate-value">1.0</span>x
+                        </label>
+                        <input
+                            type="range"
+                            id="rate-slider"
+                            class="setting-slider"
+                            min="0.5"
+                            max="2"
+                            step="0.1"
+                            value="1">
+                    </div>
+
+                    <!-- Pitch Control -->
+                    <div class="setting-group">
+                        <label for="pitch-slider" class="setting-label">
+                            Pitch: <span id="pitch-value">1.0</span>
+                        </label>
+                        <input
+                            type="range"
+                            id="pitch-slider"
+                            class="setting-slider"
+                            min="0.5"
+                            max="2"
+                            step="0.1"
+                            value="1">
+                    </div>
+
+                    <!-- Volume Control -->
+                    <div class="setting-group">
+                        <label for="volume-slider" class="setting-label">
+                            Volume: <span id="volume-value">100</span>%
+                        </label>
+                        <input
+                            type="range"
+                            id="volume-slider"
+                            class="setting-slider"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value="1">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Playback Controls -->
+            <section class="controls-section">
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div class="progress-info">
+                    <span id="current-word">Ready</span>
+                    <span id="word-progress"></span>
+                </div>
+
+                <div class="playback-controls">
+                    <button type="button" class="btn btn-control" id="skip-back-btn" aria-label="Skip back">
+                        ⏪
+                    </button>
+                    <button type="button" class="btn btn-primary btn-play" id="play-btn" aria-label="Play">
+                        <span class="play-icon">▶️</span>
+                        <span class="play-text">Play</span>
+                    </button>
+                    <button type="button" class="btn btn-control" id="stop-btn" aria-label="Stop">
+                        ⏹️
+                    </button>
+                    <button type="button" class="btn btn-control" id="skip-forward-btn" aria-label="Skip forward">
+                        ⏩
+                    </button>
+                </div>
+            </section>
+
+            <!-- Status Messages -->
+            <div class="status-bar" id="status-bar">
+                <span class="status-icon">ℹ️</span>
+                <span class="status-text" id="status-text">Ready to play</span>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Built with the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API" target="_blank" rel="noopener">Web Speech API</a></p>
+            <p class="footer-links">
+                <a href="https://github.com/AntoineKoerber/The-Homemade-Audiobook" target="_blank" rel="noopener">View Source</a>
+                <span class="separator">•</span>
+                <a href="https://github.com/AntoineKoerber" target="_blank" rel="noopener">More Projects</a>
+            </p>
+        </footer>
+    </div>
+
+    <!-- Browser Support Warning (hidden by default) -->
+    <div class="browser-warning" id="browser-warning" hidden>
+        <div class="warning-content">
+            <h2>⚠️ Browser Not Supported</h2>
+            <p>Your browser doesn't support the Web Speech API. Please try:</p>
+            <ul>
+                <li>Google Chrome (recommended)</li>
+                <li>Microsoft Edge</li>
+                <li>Safari</li>
+                <li>Firefox</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="static/js/app.js"></script>
+</body>
+</html>
