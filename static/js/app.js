@@ -52,6 +52,10 @@ Enjoy your listening experience!`,
     isPaused: false,
     currentCharIndex: 0,
     totalChars: 0,
+    sentenceQueue: [],
+    sentenceIndex: 0,
+    charOffset: 0,
+    pauseTimerId: null,
     settings: {
       voiceIndex: 0,
       rate: 1.0,
@@ -148,15 +152,34 @@ Enjoy your listening experience!`,
   };
 
   /**
-   * Load available voices
+   * Check if a voice is high quality (premium/enhanced)
+   */
+  const isHighQualityVoice = (voice) => {
+    const name = voice.name.toLowerCase();
+    return name.includes('premium') || name.includes('enhanced') ||
+           name.includes('natural') || name.includes('neural') ||
+           name.includes('samantha') || name.includes('karen') ||
+           name.includes('daniel') || name.includes('moira') ||
+           name.includes('tessa') || name.includes('fiona');
+  };
+
+  /**
+   * Load available voices, preferring high-quality English voices
    */
   const loadVoices = () => {
     state.voices = state.synth.getVoices();
 
-    // Sort voices: prioritize English voices, then alphabetically
+    // Sort: high-quality English first, then English, then others
     state.voices.sort((a, b) => {
       const aIsEnglish = a.lang.startsWith('en');
       const bIsEnglish = b.lang.startsWith('en');
+      const aIsHQ = isHighQualityVoice(a);
+      const bIsHQ = isHighQualityVoice(b);
+
+      // High-quality English first
+      if (aIsEnglish && aIsHQ && !(bIsEnglish && bIsHQ)) return -1;
+      if (bIsEnglish && bIsHQ && !(aIsEnglish && aIsHQ)) return 1;
+      // Then regular English
       if (aIsEnglish && !bIsEnglish) return -1;
       if (!aIsEnglish && bIsEnglish) return 1;
       return a.name.localeCompare(b.name);
@@ -168,11 +191,12 @@ Enjoy your listening experience!`,
       const option = document.createElement('option');
       option.value = index;
       const langLabel = voice.lang.split('-')[0].toUpperCase();
-      option.textContent = `${voice.name} (${langLabel})${voice.default ? ' - Default' : ''}`;
+      const quality = isHighQualityVoice(voice) ? ' ★' : '';
+      option.textContent = `${voice.name} (${langLabel})${quality}${voice.default ? ' - Default' : ''}`;
       elements.voiceSelect.appendChild(option);
     });
 
-    // Restore saved voice preference
+    // Restore saved voice preference, or auto-select best voice
     if (state.settings.voiceIndex < state.voices.length) {
       elements.voiceSelect.value = state.settings.voiceIndex;
     }
@@ -180,10 +204,60 @@ Enjoy your listening experience!`,
     updateStatus(`${state.voices.length} voices available`);
   };
 
+  // ============================================
+  // Natural Speech Processing
+  // ============================================
+
   /**
-   * Create and configure speech utterance
+   * Split text into sentences for more natural delivery.
+   * Each sentence gets slight rate/pitch variation.
    */
-  const createUtterance = (text) => {
+  const splitIntoSentences = (text) => {
+    // Split on sentence-ending punctuation, keeping the delimiter
+    const raw = text.split(/(?<=[.!?…])\s+/);
+    const sentences = [];
+
+    for (const chunk of raw) {
+      const trimmed = chunk.trim();
+      if (!trimmed) continue;
+
+      // Further split very long chunks at commas/semicolons if > 200 chars
+      if (trimmed.length > 200) {
+        const subChunks = trimmed.split(/(?<=[,;:])\s+/);
+        for (const sub of subChunks) {
+          if (sub.trim()) sentences.push(sub.trim());
+        }
+      } else {
+        sentences.push(trimmed);
+      }
+    }
+
+    return sentences.length > 0 ? sentences : [text];
+  };
+
+  /**
+   * Get a small random variation for natural cadence
+   */
+  const vary = (base, range) => {
+    return base + (Math.random() - 0.5) * 2 * range;
+  };
+
+  /**
+   * Determine pause duration after a sentence based on punctuation
+   */
+  const getPauseDuration = (sentence) => {
+    const lastChar = sentence.trim().slice(-1);
+    if (lastChar === '.' || lastChar === '…') return 400;
+    if (lastChar === '!' || lastChar === '?') return 500;
+    if (lastChar === ':' || lastChar === ';') return 300;
+    if (lastChar === ',') return 150;
+    return 200;
+  };
+
+  /**
+   * Create and configure speech utterance for a single chunk
+   */
+  const createUtterance = (text, options = {}) => {
     const utterance = new SpeechSynthesisUtterance(text);
 
     // Set voice
@@ -192,67 +266,97 @@ Enjoy your listening experience!`,
       utterance.voice = state.voices[voiceIndex];
     }
 
-    // Set speech parameters
-    utterance.rate = parseFloat(elements.rateSlider.value);
-    utterance.pitch = parseFloat(elements.pitchSlider.value);
+    // Set speech parameters with optional variation
+    const baseRate = parseFloat(elements.rateSlider.value);
+    const basePitch = parseFloat(elements.pitchSlider.value);
+    utterance.rate = Math.max(0.5, Math.min(2.0, options.rate || baseRate));
+    utterance.pitch = Math.max(0.5, Math.min(2.0, options.pitch || basePitch));
     utterance.volume = parseFloat(elements.volumeSlider.value);
 
-    // Event handlers
-    utterance.onstart = () => {
-      state.isPlaying = true;
-      state.isPaused = false;
-      updatePlayButton();
-      updateStatus('Playing...', 'playing');
-      state.totalChars = text.length;
-    };
+    return utterance;
+  };
 
-    utterance.onend = () => {
-      state.isPlaying = false;
-      state.isPaused = false;
-      state.currentCharIndex = 0;
-      updatePlayButton();
-      updateProgress(0, 0);
-      updateStatus('Playback complete', 'success');
-      elements.currentWord.textContent = 'Finished';
-    };
+  /**
+   * Speak sentences sequentially with natural pauses and variation.
+   * This is the core improvement — instead of one giant utterance,
+   * each sentence is spoken individually with slight variations.
+   */
+  const speakNaturally = (fullText) => {
+    const sentences = splitIntoSentences(fullText);
+    const baseRate = parseFloat(elements.rateSlider.value);
+    const basePitch = parseFloat(elements.pitchSlider.value);
 
-    utterance.onerror = (event) => {
-      if (event.error !== 'interrupted') {
+    state.totalChars = fullText.length;
+    state.isPlaying = true;
+    state.isPaused = false;
+    state.sentenceQueue = sentences;
+    state.sentenceIndex = 0;
+    state.charOffset = 0;
+
+    updatePlayButton();
+    updateStatus('Playing...', 'playing');
+
+    const speakNext = () => {
+      if (!state.isPlaying || state.sentenceIndex >= sentences.length) {
+        // All done
         state.isPlaying = false;
         state.isPaused = false;
+        state.currentCharIndex = 0;
         updatePlayButton();
-        updateStatus(`Error: ${event.error}`, 'error');
-        console.error('Speech synthesis error:', event);
+        updateProgress(0, 0);
+        updateStatus('Playback complete', 'success');
+        elements.currentWord.textContent = 'Finished';
+        return;
       }
+
+      const sentence = sentences[state.sentenceIndex];
+      const sentenceCharOffset = state.charOffset;
+
+      // Slight natural variation per sentence
+      const utterance = createUtterance(sentence, {
+        rate: vary(baseRate, 0.05),
+        pitch: vary(basePitch, 0.03),
+      });
+
+      utterance.onboundary = (event) => {
+        if (event.name === 'word') {
+          const globalCharIndex = sentenceCharOffset + event.charIndex;
+          state.currentCharIndex = globalCharIndex;
+          updateProgress(globalCharIndex, state.totalChars);
+
+          // Highlight current word
+          const wordEnd = sentence.indexOf(' ', event.charIndex);
+          const currentWord = wordEnd > -1
+            ? sentence.substring(event.charIndex, wordEnd)
+            : sentence.substring(event.charIndex);
+          elements.currentWord.textContent = currentWord.trim() || '...';
+        }
+      };
+
+      utterance.onend = () => {
+        state.charOffset += sentence.length + 1; // +1 for space
+        state.sentenceIndex++;
+
+        // Pause between sentences for natural rhythm
+        const pauseMs = getPauseDuration(sentence);
+        state.pauseTimerId = setTimeout(speakNext, pauseMs);
+      };
+
+      utterance.onerror = (event) => {
+        if (event.error !== 'interrupted') {
+          state.isPlaying = false;
+          state.isPaused = false;
+          updatePlayButton();
+          updateStatus(`Error: ${event.error}`, 'error');
+          console.error('Speech synthesis error:', event);
+        }
+      };
+
+      state.utterance = utterance;
+      state.synth.speak(utterance);
     };
 
-    utterance.onpause = () => {
-      state.isPaused = true;
-      updatePlayButton();
-      updateStatus('Paused', '');
-    };
-
-    utterance.onresume = () => {
-      state.isPaused = false;
-      updatePlayButton();
-      updateStatus('Playing...', 'playing');
-    };
-
-    utterance.onboundary = (event) => {
-      if (event.name === 'word') {
-        state.currentCharIndex = event.charIndex;
-        updateProgress(event.charIndex, state.totalChars);
-
-        // Highlight current word
-        const wordEnd = text.indexOf(' ', event.charIndex);
-        const currentWord = wordEnd > -1
-          ? text.substring(event.charIndex, wordEnd)
-          : text.substring(event.charIndex);
-        elements.currentWord.textContent = currentWord.trim() || '...';
-      }
-    };
-
-    return utterance;
+    speakNext();
   };
 
   /**
@@ -292,20 +396,30 @@ Enjoy your listening experience!`,
 
     if (state.isPaused) {
       state.synth.resume();
+      state.isPaused = false;
+      state.isPlaying = true;
+      updatePlayButton();
+      updateStatus('Playing...', 'playing');
       return;
     }
 
     if (state.isPlaying) {
       state.synth.pause();
+      state.isPaused = true;
+      updatePlayButton();
+      updateStatus('Paused', '');
       return;
     }
 
-    // Cancel any existing speech
+    // Cancel any existing speech and timers
     state.synth.cancel();
+    if (state.pauseTimerId) {
+      clearTimeout(state.pauseTimerId);
+      state.pauseTimerId = null;
+    }
 
-    // Create and speak new utterance
-    state.utterance = createUtterance(text);
-    state.synth.speak(state.utterance);
+    // Speak with natural sentence-by-sentence delivery
+    speakNaturally(text);
   };
 
   /**
@@ -313,9 +427,15 @@ Enjoy your listening experience!`,
    */
   const stop = () => {
     state.synth.cancel();
+    if (state.pauseTimerId) {
+      clearTimeout(state.pauseTimerId);
+      state.pauseTimerId = null;
+    }
     state.isPlaying = false;
     state.isPaused = false;
     state.currentCharIndex = 0;
+    state.sentenceIndex = 0;
+    state.charOffset = 0;
     updatePlayButton();
     updateProgress(0, 0);
     updateStatus('Stopped', '');
